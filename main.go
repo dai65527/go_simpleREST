@@ -1,0 +1,132 @@
+package main
+
+import (
+	"bytes"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log"
+	"net/http"
+	"strconv"
+	"strings"
+
+	_ "modernc.org/sqlite"
+)
+
+// パッケージ変数はあとでconfig化する
+var DBSOURCE string = "./database.db"
+var db *sql.DB
+
+type Item struct {
+	Id   int    `json:"id"`
+	Name string `json:"name"`
+	Done bool   `json:"done"`
+}
+
+func main() {
+	var err error
+
+	// Open data base
+	db, err = sql.Open("sqlite", DBSOURCE) // 後でMySQLにする
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Init db
+	err = initDB(db)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// ハンドラの追加
+	http.HandleFunc("/items/", handleItems)
+
+	err = http.ListenAndServe(":8000", nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func handleItems(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "GET":
+		sendItems(w)
+	case "POST":
+		addNewItems(w, r)
+	case "DELETE":
+		// item done
+	case "PUT":
+		// update item
+	default:
+		http.Error(w, "Method Not Allowed", 405)
+	}
+}
+
+func initDB(db *sql.DB) error {
+	const sql = `
+		CREATE TABLE IF NOT EXISTS items (
+			id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			done BOOLEAN NOT NULL DEFAULT 0
+		);`
+	_, err := db.Exec(sql)
+	return err
+}
+
+func routeParameter(r *http.Request, n int) (string, error) {
+	params := strings.Split(r.RequestURI, "/")
+	if len(params) < n {
+		return "", errors.New("cannot find parameter")
+	}
+	return params[n], nil
+}
+
+func routeParameterInt(r *http.Request, n int) int {
+	idStr, err := routeParameter(r, 1)
+	if err != nil {
+		return -1
+	}
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		return -1
+	}
+	return id
+}
+
+func sendItems(w http.ResponseWriter) {
+	var items []Item
+	rows, err := db.Query(`SELECT * FROM items;`)
+	if err != nil {
+		http.Error(w, "Internal Sever Error", http.StatusInternalServerError)
+	}
+	for rows.Next() {
+		var item Item
+		rows.Scan(&item.Id, &item.Name, &item.Done)
+		items = append(items, item)
+	}
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	if err := enc.Encode(items); err != nil {
+		http.Error(w, "Internal Sever Error", http.StatusInternalServerError)
+	}
+	w.Header().Add("Content-Type", "application/json")
+	log.Print(buf.String())
+	fmt.Fprint(w, buf.String())
+}
+
+func addNewItems(w http.ResponseWriter, r *http.Request) {
+	var reqBody struct {
+		Name string `json:"name"`
+	}
+	dec := json.NewDecoder(r.Body)
+	err := dec.Decode(&reqBody)
+	if err != nil {
+		http.Error(w, "Bad Request", 400)
+	}
+	_, err = db.Exec(`INSERT INTO items (name, done) values (?, ?)`, reqBody.Name, false)
+	if err != nil {
+		log.Print(err)
+	}
+	w.WriteHeader(http.StatusCreated)
+}
