@@ -41,6 +41,7 @@ func main() {
 
 	// ハンドラの追加
 	http.HandleFunc("/items/", handleItems)
+	http.HandleFunc("/done/", handleDone)
 
 	err = http.ListenAndServe(":8000", nil)
 	if err != nil {
@@ -61,6 +62,12 @@ func handleItems(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func handleDone(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "PUT":
+		doneItems(w, r)
+	case "DELETE":
+		unDoneItems(w, r)
 	default:
 		http.Error(w, "Method Not Allowed", 405)
 	}
@@ -161,6 +168,32 @@ func deleteOneItem(w http.ResponseWriter, id int) {
 
 func deleteDoneItems(w http.ResponseWriter) {
 	_, err := db.Exec(`DELETE FROM items WHERE done=true`)
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func doneItems(w http.ResponseWriter, r *http.Request) {
+	id := routeParameterInt(r, 1)
+	if id == -1 {
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		return
+	}
+	_, err := db.Exec(`UPDATE items SET done=true where id=?`, id)
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+	w.WriteHeader(http.StatusCreated)
+}
+
+func unDoneItems(w http.ResponseWriter, r *http.Request) {
+	id := routeParameterInt(r, 1)
+	if id == -1 {
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		return
+	}
+	_, err := db.Exec(`UPDATE items SET done=false where id=?`, id)
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
