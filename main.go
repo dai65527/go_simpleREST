@@ -75,15 +75,22 @@ func initDB(db *sql.DB) error {
 }
 
 func routeParameter(r *http.Request, n int) (string, error) {
-	params := strings.Split(r.RequestURI, "/")
-	if len(params) < n {
+	splited := strings.Split(r.RequestURI, "/")
+	var params []string
+	for i := 0; i < len(splited); i++ {
+		if len(splited[i]) != 0 {
+			params = append(params, splited[i])
+		}
+	}
+
+	if len(params) <= n {
 		return "", errors.New("cannot find parameter")
 	}
 	return params[n], nil
 }
 
 func routeParameterInt(r *http.Request, n int) int {
-	idStr, err := routeParameter(r, 1)
+	idStr, err := routeParameter(r, n)
 	if err != nil {
 		return -1
 	}
