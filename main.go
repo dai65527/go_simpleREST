@@ -55,9 +55,12 @@ func handleItems(w http.ResponseWriter, r *http.Request) {
 	case "POST":
 		addNewItems(w, r)
 	case "DELETE":
-		// item done
-	case "PUT":
-		// update item
+		deleteItems(w, r)
+	default:
+		http.Error(w, "Method Not Allowed", 405)
+	}
+}
+
 	default:
 		http.Error(w, "Method Not Allowed", 405)
 	}
@@ -134,6 +137,32 @@ func addNewItems(w http.ResponseWriter, r *http.Request) {
 	_, err = db.Exec(`INSERT INTO items (name, done) values (?, ?)`, reqBody.Name, false)
 	if err != nil {
 		log.Print(err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
 	w.WriteHeader(http.StatusCreated)
+}
+
+func deleteItems(w http.ResponseWriter, r *http.Request) {
+	id := routeParameterInt(r, 1)
+	if id != -1 {
+		deleteOneItem(w, id)
+	} else {
+		deleteDoneItems(w)
+	}
+}
+
+func deleteOneItem(w http.ResponseWriter, id int) {
+	_, err := db.Exec(`DELETE FROM items WHERE id=?`, id)
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func deleteDoneItems(w http.ResponseWriter) {
+	_, err := db.Exec(`DELETE FROM items WHERE done=true`)
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+	w.WriteHeader(http.StatusOK)
 }
