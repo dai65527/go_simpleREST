@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -43,13 +42,14 @@ func main() {
 	http.HandleFunc("/items/", handleItems)
 	http.HandleFunc("/done/", handleDone)
 
-	err = http.ListenAndServe(":8000", nil)
+	err = http.ListenAndServe(":4000", nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
 func handleItems(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Access-Control-Allow-Origin", "http://localhost:3000") // localhost:3000からのアクセスを許可する
 	switch r.Method {
 	case "GET":
 		sendItems(w)
@@ -57,17 +57,24 @@ func handleItems(w http.ResponseWriter, r *http.Request) {
 		addNewItems(w, r)
 	case "DELETE":
 		deleteItems(w, r)
+	case "OPTIONS":
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")               // Content-Typeヘッダの使用を許可する
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS") // pre-flightリクエストに対応する
 	default:
 		http.Error(w, "Method Not Allowed", 405)
 	}
 }
 
 func handleDone(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Access-Control-Allow-Origin", "http://localhost:3000") // localhost:3000からのアクセスを許可する
 	switch r.Method {
 	case "PUT":
 		doneItems(w, r)
 	case "DELETE":
 		unDoneItems(w, r)
+	case "OPTIONS":
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")         // Content-Typeヘッダの使用を許可する
+		w.Header().Set("Access-Control-Allow-Methods", "PUT, DELETE, OPTIONS") // pre-flightリクエストに対応する
 	default:
 		http.Error(w, "Method Not Allowed", 405)
 	}
