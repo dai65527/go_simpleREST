@@ -54,7 +54,7 @@ func handleItems(w http.ResponseWriter, r *http.Request) {
 	case "GET":
 		sendItems(w)
 	case "POST":
-		addNewItems(w, r)
+		addNewItem(w, r)
 	case "DELETE":
 		deleteItems(w, r)
 	case "OPTIONS":
@@ -69,9 +69,9 @@ func handleDone(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Access-Control-Allow-Origin", "http://localhost:3000") // localhost:3000からのアクセスを許可する
 	switch r.Method {
 	case "PUT":
-		doneItems(w, r)
+		doneItem(w, r)
 	case "DELETE":
-		unDoneItems(w, r)
+		unDoneItem(w, r)
 	case "OPTIONS":
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")         // Content-Typeヘッダの使用を許可する
 		w.Header().Set("Access-Control-Allow-Methods", "PUT, DELETE, OPTIONS") // pre-flightリクエストに対応する
@@ -122,7 +122,7 @@ func sendItems(w http.ResponseWriter) {
 	var items []Item
 	rows, err := db.Query(`SELECT * FROM items;`)
 	if err != nil {
-		http.Error(w, "Internal Sever Error", http.StatusInternalServerError)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 	for rows.Next() {
 		var item Item
@@ -132,24 +132,24 @@ func sendItems(w http.ResponseWriter) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	if err := enc.Encode(items); err != nil {
-		http.Error(w, "Internal Sever Error", http.StatusInternalServerError)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 	w.Header().Add("Content-Type", "application/json")
 }
 
-func addNewItems(w http.ResponseWriter, r *http.Request) {
+func addNewItem(w http.ResponseWriter, r *http.Request) {
 	var reqBody struct {
 		Name string `json:"name"`
 	}
 	dec := json.NewDecoder(r.Body)
 	err := dec.Decode(&reqBody)
 	if err != nil {
-		http.Error(w, "Bad Request", 400)
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 	}
 	_, err = db.Exec(`INSERT INTO items (name, done) values (?, ?)`, reqBody.Name, false)
 	if err != nil {
 		log.Print(err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 	w.WriteHeader(http.StatusCreated)
 }
@@ -166,7 +166,7 @@ func deleteItems(w http.ResponseWriter, r *http.Request) {
 func deleteOneItem(w http.ResponseWriter, id int) {
 	_, err := db.Exec(`DELETE FROM items WHERE id=?`, id)
 	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 	w.WriteHeader(http.StatusOK)
 }
@@ -174,12 +174,12 @@ func deleteOneItem(w http.ResponseWriter, id int) {
 func deleteDoneItems(w http.ResponseWriter) {
 	_, err := db.Exec(`DELETE FROM items WHERE done=true`)
 	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 	w.WriteHeader(http.StatusOK)
 }
 
-func doneItems(w http.ResponseWriter, r *http.Request) {
+func doneItem(w http.ResponseWriter, r *http.Request) {
 	id := routeParameterInt(r, 1)
 	if id == -1 {
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
@@ -187,12 +187,12 @@ func doneItems(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err := db.Exec(`UPDATE items SET done=true where id=?`, id)
 	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 	w.WriteHeader(http.StatusCreated)
 }
 
-func unDoneItems(w http.ResponseWriter, r *http.Request) {
+func unDoneItem(w http.ResponseWriter, r *http.Request) {
 	id := routeParameterInt(r, 1)
 	if id == -1 {
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
@@ -200,7 +200,7 @@ func unDoneItems(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err := db.Exec(`UPDATE items SET done=false where id=?`, id)
 	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 	w.WriteHeader(http.StatusOK)
 }
