@@ -128,8 +128,6 @@ func sendItems(w http.ResponseWriter) {
 		http.Error(w, "Internal Sever Error", http.StatusInternalServerError)
 	}
 	w.Header().Add("Content-Type", "application/json")
-	log.Print(buf.String())
-	fmt.Fprint(w, buf.String())
 }
 
 func addNewItems(w http.ResponseWriter, r *http.Request) {
