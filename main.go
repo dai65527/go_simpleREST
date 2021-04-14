@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -13,8 +13,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// パッケージ変数はあとでconfig化する
-var DBSOURCE string = "./database.db"
+const dbsource string = "./database.db"
+
 var db *sql.DB
 
 type Item struct {
@@ -27,7 +27,7 @@ func main() {
 	var err error
 
 	// Open data base
-	db, err = sql.Open("sqlite", DBSOURCE) // 後でMySQLにする
+	db, err = sql.Open("sqlite", dbsource) // 後でMySQLにする
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -38,9 +38,9 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// ハンドラの追加
-	http.HandleFunc("/items/", handleItems)
-	http.HandleFunc("/done/", handleDone)
+	// リクエストハンドラの追加
+	http.HandleFunc("/items", itemsHandler)    // `/items`の処理（）
+	http.HandleFunc("/items/", itemsIdHandler) // `/items/:id`と`/items/:id/done`の処理
 
 	err = http.ListenAndServe(":4000", nil)
 	if err != nil {
@@ -48,38 +48,81 @@ func main() {
 	}
 }
 
-func handleItems(w http.ResponseWriter, r *http.Request) {
-	w.Header().Add("Access-Control-Allow-Origin", "http://localhost:3000") // localhost:3000からのアクセスを許可する
+/*** リクエストハンドラ ***/
+
+func itemsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000") // localhost:3000からのオリジン間アクセスを許可する
+
 	switch r.Method {
 	case "GET":
-		sendItems(w)
+		getAllItems(w, r) // 全てのitemの取得
 	case "POST":
-		addNewItem(w, r)
+		addNewItem(w, r) // 新しいitemの追加
 	case "DELETE":
-		deleteItems(w, r)
+		deleteDoneItems(w) // 実行済みitemの削除
 	case "OPTIONS":
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")               // Content-Typeヘッダの使用を許可する
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS") // pre-flightリクエストに対応する
 	default:
-		http.Error(w, "Method Not Allowed", 405)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 	}
 }
 
-func handleDone(w http.ResponseWriter, r *http.Request) {
-	w.Header().Add("Access-Control-Allow-Origin", "http://localhost:3000") // localhost:3000からのアクセスを許可する
+func itemsIdHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000") // localhost:3000からのオリジン間アクセスを許可する
+
+	// ルートパラメータの取得（例: `/items/1/done` -> ["items", "1", "done"]）
+	params := getRouteParams(r)
+	if len(params) < 2 || len(params) > 3 {
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		return
+	}
+
+	// itemのidをintで取得
+	id, err := strconv.Atoi(params[1])
+	if err != nil || id < 1 {
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		return
+	}
+
+	if len(params) == 2 {
+		updateItem(id, w, r)
+	} else if params[2] == "done" {
+		updateDone(id, w, r)
+	} else {
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+	}
+}
+
+func updateItem(id int, w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "DELETE":
+		deleteOneItem(id, w)
+	case "OPTIONS":
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")    // Content-Typeヘッダの使用を許可する
+		w.Header().Set("Access-Control-Allow-Methods", "DELETE, OPTIONS") // pre-flightリクエストに対応する
+	default:
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+	}
+}
+
+func updateDone(id int, w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "PUT":
-		doneItem(w, r)
+		doneItem(id, w, r)
 	case "DELETE":
-		unDoneItem(w, r)
+		unDoneItem(id, w, r)
 	case "OPTIONS":
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")         // Content-Typeヘッダの使用を許可する
 		w.Header().Set("Access-Control-Allow-Methods", "PUT, DELETE, OPTIONS") // pre-flightリクエストに対応する
 	default:
-		http.Error(w, "Method Not Allowed", 405)
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 	}
 }
 
+/*** データベース操作 ***/
+
+// データベース初期化
 func initDB(db *sql.DB) error {
 	const sql = `
 		CREATE TABLE IF NOT EXISTS items (
@@ -91,34 +134,8 @@ func initDB(db *sql.DB) error {
 	return err
 }
 
-func routeParameter(r *http.Request, n int) (string, error) {
-	splited := strings.Split(r.RequestURI, "/")
-	var params []string
-	for i := 0; i < len(splited); i++ {
-		if len(splited[i]) != 0 {
-			params = append(params, splited[i])
-		}
-	}
-
-	if len(params) <= n {
-		return "", errors.New("cannot find parameter")
-	}
-	return params[n], nil
-}
-
-func routeParameterInt(r *http.Request, n int) int {
-	idStr, err := routeParameter(r, n)
-	if err != nil {
-		return -1
-	}
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		return -1
-	}
-	return id
-}
-
-func sendItems(w http.ResponseWriter) {
+// 全アイテムの取得
+func getAllItems(w http.ResponseWriter, r *http.Request) {
 	var items []Item
 	rows, err := db.Query(`SELECT * FROM items;`)
 	if err != nil {
@@ -134,9 +151,11 @@ func sendItems(w http.ResponseWriter) {
 	if err := enc.Encode(items); err != nil {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
-	w.Header().Add("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprint(w, buf.String())
 }
 
+// 新しいアイテムを追加
 func addNewItem(w http.ResponseWriter, r *http.Request) {
 	var reqBody struct {
 		Name string `json:"name"`
@@ -154,16 +173,8 @@ func addNewItem(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 }
 
-func deleteItems(w http.ResponseWriter, r *http.Request) {
-	id := routeParameterInt(r, 1)
-	if id != -1 {
-		deleteOneItem(w, id)
-	} else {
-		deleteDoneItems(w)
-	}
-}
-
-func deleteOneItem(w http.ResponseWriter, id int) {
+// 1つのアイテムを削除
+func deleteOneItem(id int, w http.ResponseWriter) {
 	_, err := db.Exec(`DELETE FROM items WHERE id=?`, id)
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -171,6 +182,7 @@ func deleteOneItem(w http.ResponseWriter, id int) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// 全ての実行済みアイテムを削除
 func deleteDoneItems(w http.ResponseWriter) {
 	_, err := db.Exec(`DELETE FROM items WHERE done=true`)
 	if err != nil {
@@ -179,8 +191,8 @@ func deleteDoneItems(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func doneItem(w http.ResponseWriter, r *http.Request) {
-	id := routeParameterInt(r, 1)
+// アイテムを実行済みにする
+func doneItem(id int, w http.ResponseWriter, r *http.Request) {
 	if id == -1 {
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
@@ -192,8 +204,8 @@ func doneItem(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 }
 
-func unDoneItem(w http.ResponseWriter, r *http.Request) {
-	id := routeParameterInt(r, 1)
+// アイテムを未実行にする
+func unDoneItem(id int, w http.ResponseWriter, r *http.Request) {
 	if id == -1 {
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
@@ -203,4 +215,17 @@ func unDoneItem(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+/*** その他 ***/
+
+func getRouteParams(r *http.Request) []string {
+	splited := strings.Split(r.RequestURI, "/")
+	var params []string
+	for i := 0; i < len(splited); i++ {
+		if len(splited[i]) != 0 {
+			params = append(params, splited[i])
+		}
+	}
+	return params
 }
