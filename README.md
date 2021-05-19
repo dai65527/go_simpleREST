@@ -6,9 +6,18 @@ Simple todo list api
 
 ```
 $ git clone https://github.com/dai65527/go_simpleREST.git
-$ cd go_simpleREST
-$ go get modernc.org/sqlite
+$ cd go_simpleREST/srcs
+$ go mod tidy
 $ go run main.go
+```
+
+Or use docker.
+
+```
+$ git clone https://github.com/dai65527/go_simpleREST.git
+$ cd go_simpleREST
+$ docker build -t go_simpleREST .
+$ docker run --rm -d -p 4000:4000 go_simpleREST
 ```
 
 ## End Points
