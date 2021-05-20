@@ -7,13 +7,14 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
+	"time"
 
+	_ "github.com/go-sql-driver/mysql"
 	_ "modernc.org/sqlite"
 )
-
-const dbsource string = "./database.db"
 
 var db *sql.DB
 
@@ -26,13 +27,15 @@ type Item struct {
 func main() {
 	var err error
 
-	// Open data base
-	db, err = sql.Open("sqlite", dbsource) // 後でMySQLにする
+	// Connect to database
+	log.Print("Connecting db...")
+	err = connectDB()
 	if err != nil {
 		log.Fatal(err)
 	}
+	log.Print("DB ready!!")
 
-	// Init db
+	// Init database
 	err = initDB(db)
 	if err != nil {
 		log.Fatal(err)
@@ -122,14 +125,63 @@ func updateDone(id int, w http.ResponseWriter, r *http.Request) {
 
 /*** データベース操作 ***/
 
+// データベース接続
+func connectDB() error {
+	var dbSource string
+	var dbDriver string
+	var err error
+
+	if os.Getenv("DB_MIDDLEWARE") == "mysql" {
+		dbDriver = "mysql"
+		dbName := os.Getenv("MYSQL_DATABASE")
+		dbUser := os.Getenv("MYSQL_USER")
+		dbPass := os.Getenv("MYSQL_PASSWORD")
+		dbHost := os.Getenv("DB_HOST")
+		if dbHost == "" {
+			dbHost = "localhost:3306"
+		}
+		dbSource = fmt.Sprintf("%s:%s@tcp(%s)/%s", dbUser, dbPass, dbHost, dbName)
+	} else {
+		dbDriver = "sqlite"
+		dbSource = "./database.db"
+	}
+	db, err = sql.Open(dbDriver, dbSource)
+	if err != nil {
+		return err
+	}
+	count := 30
+	for {
+		err := db.Ping()
+		if err == nil {
+			break
+		}
+		time.Sleep(time.Second * 1)
+		if count < 1 {
+			return err
+		}
+		count--
+	}
+	return nil
+}
+
 // データベース初期化
 func initDB(db *sql.DB) error {
-	const sql = `
+	var sql string
+	if os.Getenv("DB_MIDDLEWARE") == "mysql" {
+		sql = `
+			CREATE TABLE IF NOT EXISTS items (
+				id INTEGER NOT NULL PRIMARY KEY AUTO_INCREMENT,
+				name TEXT NOT NULL,
+				done BOOLEAN NOT NULL DEFAULT 0
+			);`
+	} else {
+		sql = `
 		CREATE TABLE IF NOT EXISTS items (
 			id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,
 			done BOOLEAN NOT NULL DEFAULT 0
 		);`
+	}
 	_, err := db.Exec(sql)
 	return err
 }
