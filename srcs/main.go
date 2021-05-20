@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
+	_ "github.com/go-sql-driver/mysql"
 	_ "modernc.org/sqlite"
 )
-
-const dbsource string = "./database.db"
 
 var db *sql.DB
 
@@ -27,7 +27,11 @@ func main() {
 	var err error
 
 	// Open data base
-	db, err = sql.Open("sqlite", dbsource) // 後でMySQLにする
+	if os.Getenv("DB_MIDDLEWARE") == "mysql" {
+		db, err = sql.Open("mysql", "todoapi:todopass@tcp(tododb:3306)/todo")
+	} else {
+		db, err = sql.Open("sqlite", "./database.db")
+	}
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -124,12 +128,22 @@ func updateDone(id int, w http.ResponseWriter, r *http.Request) {
 
 // データベース初期化
 func initDB(db *sql.DB) error {
-	const sql = `
+	var sql string
+	if os.Getenv("DB_MIDDLEWARE") == "mysql" {
+		sql = `
+			CREATE TABLE IF NOT EXISTS items (
+				id INTEGER NOT NULL PRIMARY KEY AUTO_INCREMENT,
+				name TEXT NOT NULL,
+				done BOOLEAN NOT NULL DEFAULT 0
+			);`
+	} else {
+		sql = `
 		CREATE TABLE IF NOT EXISTS items (
 			id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,
 			done BOOLEAN NOT NULL DEFAULT 0
 		);`
+	}
 	_, err := db.Exec(sql)
 	return err
 }
