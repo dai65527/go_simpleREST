@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "modernc.org/sqlite"
@@ -26,17 +27,15 @@ type Item struct {
 func main() {
 	var err error
 
-	// Open data base
-	if os.Getenv("DB_MIDDLEWARE") == "mysql" {
-		db, err = sql.Open("mysql", "todoapi:todopass@tcp(tododb:3306)/todo")
-	} else {
-		db, err = sql.Open("sqlite", "./database.db")
-	}
+	// Connect to database
+	log.Print("Connecting db...")
+	err = connectDB()
 	if err != nil {
 		log.Fatal(err)
 	}
+	log.Print("DB ready!!")
 
-	// Init db
+	// Init database
 	err = initDB(db)
 	if err != nil {
 		log.Fatal(err)
@@ -125,6 +124,45 @@ func updateDone(id int, w http.ResponseWriter, r *http.Request) {
 }
 
 /*** データベース操作 ***/
+
+// データベース接続
+func connectDB() error {
+	var dbSource string
+	var dbDriver string
+	var err error
+
+	if os.Getenv("DB_MIDDLEWARE") == "mysql" {
+		dbDriver = "mysql"
+		dbName := os.Getenv("MYSQL_DATABASE")
+		dbUser := os.Getenv("MYSQL_USER")
+		dbPass := os.Getenv("MYSQL_PASSWORD")
+		dbHost := os.Getenv("DB_HOST")
+		if dbHost == "" {
+			dbHost = "localhost:3306"
+		}
+		dbSource = fmt.Sprintf("%s:%s@tcp(%s)/%s", dbUser, dbPass, dbHost, dbName)
+	} else {
+		dbDriver = "sqlite"
+		dbSource = "./database.db"
+	}
+	db, err = sql.Open(dbDriver, dbSource)
+	if err != nil {
+		return err
+	}
+	count := 30
+	for {
+		err := db.Ping()
+		if err == nil {
+			break
+		}
+		time.Sleep(time.Second * 1)
+		if count < 1 {
+			return err
+		}
+		count--
+	}
+	return nil
+}
 
 // データベース初期化
 func initDB(db *sql.DB) error {
